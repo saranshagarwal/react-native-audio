@@ -58,6 +58,7 @@ class AudioRecorderManager extends ReactContextBaseJavaModule {
   private boolean isRecording = false;
   private boolean isPaused = false;
   private boolean includeBase64 = false;
+  private boolean meteringEnabled = false;
   private Timer timer;
   private StopWatch stopWatch;
   
@@ -113,13 +114,10 @@ class AudioRecorderManager extends ReactContextBaseJavaModule {
     if (isRecording){
       logAndRejectPromise(promise, "INVALID_STATE", "Please call stopRecording before starting recording");
     }
-    File destFile = new File(recordingPath);
-    if (destFile.getParentFile() != null) {
-      destFile.getParentFile().mkdirs();
-    }
+
     recorder = new MediaRecorder();
     try {
-      recorder.setAudioSource(recordingSettings.getInt("AudioSource"));
+      recorder.setAudioSource(MediaRecorder.AudioSource.MIC);
       int outputFormat = getOutputFormatFromString(recordingSettings.getString("OutputFormat"));
       recorder.setOutputFormat(outputFormat);
       int audioEncoder = getAudioEncoderFromString(recordingSettings.getString("AudioEncoding"));
@@ -127,7 +125,8 @@ class AudioRecorderManager extends ReactContextBaseJavaModule {
       recorder.setAudioSamplingRate(recordingSettings.getInt("SampleRate"));
       recorder.setAudioChannels(recordingSettings.getInt("Channels"));
       recorder.setAudioEncodingBitRate(recordingSettings.getInt("AudioEncodingBitRate"));
-      recorder.setOutputFile(destFile.getPath());
+      recorder.setOutputFile(recordingPath);
+      meteringEnabled = recordingSettings.getBoolean("MeteringEnabled");
       includeBase64 = recordingSettings.getBoolean("IncludeBase64");
     }
     catch(final Exception e) {
@@ -315,6 +314,15 @@ class AudioRecorderManager extends ReactContextBaseJavaModule {
         if (!isPaused) {
           WritableMap body = Arguments.createMap();
           body.putDouble("currentTime", stopWatch.getTimeSeconds());
+          if(meteringEnabled){
+            int amplitude = recorder.getMaxAmplitude();
+            if (amplitude == 0) {
+              body.putInt("currentMetering", -160);//The first call - absolutely silence
+            } else {
+              //db = 20 * log10(peaks/ 32767); where 32767 - max value of amplitude in Android, peaks - current value
+              body.putInt("currentMetering", (int) (20 * Math.log(((double) amplitude) / 32767d)));
+            }
+          }
           sendEvent("recordingProgress", body);
         }
       }
